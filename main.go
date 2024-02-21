@@ -98,7 +98,7 @@ func NewTemplateContext() *TemplateContext {
 	envs := make(map[string]string)
 	for _, str := range os.Environ() {
 		substrs := strings.SplitN(str, "=", 2)
-		envs[substrs[0]] = substrs[1]
+		envs[substrs[0]] = strings.Trim(substrs[1],"\n")
 	}
 
 	return &TemplateContext{
@@ -136,6 +136,14 @@ func (tx *TemplateContext) Dict(name, itemDelimeter, kvDelimeter string) (map[st
 		dict[v[0]] = v[1]
 	}
 	return dict, nil
+}
+func (tx *TemplateContext) Exist(name string) bool {
+    _, exist := tx.envs[name]
+    return exist
+}
+func (tx *TemplateContext) NotExist(name string) bool {
+    _, exist := tx.envs[name]
+    return !exist
 }
 
 // Template file
