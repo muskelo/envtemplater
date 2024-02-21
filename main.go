@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -109,28 +110,32 @@ type TemplateContext struct {
 	envs map[string]string
 }
 
-func (tx *TemplateContext) Env(name string) string {
-	v, _ := tx.envs[name]
-	return v
-}
-func (tx *TemplateContext) List(name string, delimiter string) []string {
-	env, ok := tx.envs[name]
+// required environment variable
+func (tx *TemplateContext) Env(name string) (string, error) {
+	v, ok := tx.envs[name]
 	if !ok {
-		return []string{}
+		return "", fmt.Errorf("Error, missing variable '%v'", name)
 	}
-	return strings.Split(env, delimiter)
+	return v, nil
 }
-func (tx *TemplateContext) Dict(name, itemDelimeter, kvDelimeter string) map[string]string {
-	env, ok := tx.envs[name]
-	if !ok {
-		return map[string]string{}
-	}
+func (tx *TemplateContext) List(name string, delimiter string) ([]string, error) {
+    env, err := tx.Env(name)
+    if err != nil {
+        return nil, err
+    }
+	return strings.Split(env, delimiter), nil
+}
+func (tx *TemplateContext) Dict(name, itemDelimeter, kvDelimeter string) (map[string]string, error) {
+    env, err := tx.Env(name)
+    if err != nil {
+        return nil, err
+    }
 	dict := map[string]string{}
 	for _, substr := range strings.Split(env, itemDelimeter) {
-        v := strings.SplitN(substr, kvDelimeter, 2)
-        dict[v[0]] = v[1]
+		v := strings.SplitN(substr, kvDelimeter, 2)
+		dict[v[0]] = v[1]
 	}
-    return dict
+	return dict, nil
 }
 
 // Template file
@@ -166,7 +171,7 @@ func (tf *TemplateFile) Template() error {
 	}
 	err = templater.Execute(buf, tf.TemplateContext)
 	if err != nil {
-		return nil
+		return err
 	}
 	tf.Output = buf.String()
 	return nil
