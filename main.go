@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -98,7 +97,7 @@ func NewTemplateContext() *TemplateContext {
 	envs := make(map[string]string)
 	for _, str := range os.Environ() {
 		substrs := strings.SplitN(str, "=", 2)
-		envs[substrs[0]] = strings.Trim(substrs[1],"\n")
+		envs[substrs[0]] = strings.Trim(substrs[1], "\n")
 	}
 
 	return &TemplateContext{
@@ -110,7 +109,25 @@ type TemplateContext struct {
 	envs map[string]string
 }
 
-// required environment variable
+func (tx *TemplateContext) loadEnvFile(path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// read by line
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		// skip bad line
+		if len(line) < 3 || strings.Index(line, "=") == -1 || strings.Index(line, "#") == 0 {
+			continue
+		}
+		kw := strings.SplitN(line, "=", 2)
+		// add to envs
+		tx.envs[kw[0]] = kw[1]
+	}
+	return nil
+}
+
 func (tx *TemplateContext) Env(name string) (string, error) {
 	v, ok := tx.envs[name]
 	if !ok {
@@ -119,17 +136,17 @@ func (tx *TemplateContext) Env(name string) (string, error) {
 	return v, nil
 }
 func (tx *TemplateContext) List(name string, delimiter string) ([]string, error) {
-    env, err := tx.Env(name)
-    if err != nil {
-        return nil, err
-    }
+	env, err := tx.Env(name)
+	if err != nil {
+		return nil, err
+	}
 	return strings.Split(env, delimiter), nil
 }
 func (tx *TemplateContext) Dict(name, itemDelimeter, kvDelimeter string) (map[string]string, error) {
-    env, err := tx.Env(name)
-    if err != nil {
-        return nil, err
-    }
+	env, err := tx.Env(name)
+	if err != nil {
+		return nil, err
+	}
 	dict := map[string]string{}
 	for _, substr := range strings.Split(env, itemDelimeter) {
 		v := strings.SplitN(substr, kvDelimeter, 2)
@@ -138,12 +155,12 @@ func (tx *TemplateContext) Dict(name, itemDelimeter, kvDelimeter string) (map[st
 	return dict, nil
 }
 func (tx *TemplateContext) Exist(name string) bool {
-    _, exist := tx.envs[name]
-    return exist
+	_, exist := tx.envs[name]
+	return exist
 }
 func (tx *TemplateContext) NotExist(name string) bool {
-    _, exist := tx.envs[name]
-    return !exist
+	_, exist := tx.envs[name]
+	return !exist
 }
 
 // Template file
@@ -198,6 +215,7 @@ func NewFlags() (Flags, error) {
 	flagSet.StringVar(&flags.OF, "of", "", "Output file")
 	flagSet.StringVar(&flags.ID, "id", "", "Input dir")
 	flagSet.StringVar(&flags.OD, "od", "", "Output dir")
+	flagSet.StringVar(&flags.EF, "ef", "", "Environment file")
 
 	err := flagSet.Parse(os.Args[1:])
 	if err != nil {
@@ -207,11 +225,11 @@ func NewFlags() (Flags, error) {
 	// validate
 	switch {
 	case flags.IF == "" && flags.ID == "":
-		err = errors.New("Required input file or input dir")
+		err = fmt.Errorf("Required input file or input dir")
 	case flags.IF != "" && flags.OF == "":
-		err = errors.New("Required output file when using input file")
+		err = fmt.Errorf("Required output file when using input file")
 	case flags.ID != "" && flags.OD == "":
-		err = errors.New("Required output dir when using input dir")
+		err = fmt.Errorf("Required output dir when using input dir")
 	}
 
 	return flags, err
@@ -222,11 +240,13 @@ type Flags struct {
 	OF string
 	ID string
 	OD string
+	EF string
 }
 
 func Run(flags Flags) error {
 	var err error
 
+	// copy dir struct if Required
 	if flags.ID != "" {
 		err = recursiveCopyDir(flags.ID, flags.OD)
 		if err != nil {
@@ -236,6 +256,15 @@ func Run(flags Flags) error {
 
 	tx := NewTemplateContext()
 
+	// load env file if exist
+	if flags.EF != "" {
+		err = tx.loadEnvFile(flags.EF)
+		if err != nil {
+			return err
+		}
+	}
+
+	// find templates
 	templateFiles := []*TemplateFile{}
 	if flags.ID != "" {
 		files, err := recursiveGetFiles(flags.ID)
@@ -257,20 +286,19 @@ func Run(flags Flags) error {
 		))
 	}
 
+	// read, template, write all templates
 	for _, templateFile := range templateFiles {
 		err := templateFile.LoadInput()
 		if err != nil {
 			return err
 		}
 	}
-
 	for _, templateFile := range templateFiles {
 		err := templateFile.Template()
 		if err != nil {
 			return err
 		}
 	}
-
 	for _, templateFile := range templateFiles {
 		err := templateFile.SaveOutput()
 		if err != nil {
